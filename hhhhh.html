@@ -1,0 +1,996 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>설비 검사 추적기 v4</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700;900&family=JetBrains+Mono:wght@400;700&display=swap');
+
+  :root {
+    --bg: #070b12;
+    --surface: #0e1520;
+    --surface2: #141d2e;
+    --surface3: #1a2538;
+    --border: #1c2b42;
+    --border2: #243350;
+    --accent: #00d4ff;
+    --accent2: #ff6b35;
+    --success: #00e676;
+    --pause: #ffb300;
+    --danger: #ff4444;
+    --text: #ddeeff;
+    --text2: #7090bb;
+    --text3: #334d6e;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  body { font-family: 'Noto Sans KR', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; overflow-x: hidden; }
+
+  .header { background: linear-gradient(180deg,#0c1828 0%,#070b12 100%); border-bottom: 1px solid var(--border); padding: 13px 16px 11px; position: sticky; top: 0; z-index: 200; }
+  .header-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 3px; }
+  .logo { font-family: 'JetBrains Mono', monospace; font-size: 10px; color: var(--accent); letter-spacing: 3px; }
+  .clock { font-family: 'JetBrains Mono', monospace; font-size: 13px; color: var(--text2); }
+  .header-title { font-size: 16px; font-weight: 700; }
+
+  .tabs { display: flex; background: var(--surface); border-bottom: 1px solid var(--border); }
+  .tab { flex: 1; padding: 10px 4px; font-size: 12px; font-weight: 600; color: var(--text3); border: none; background: transparent; cursor: pointer; border-bottom: 2px solid transparent; font-family: 'Noto Sans KR', sans-serif; transition: all 0.2s; }
+  .tab.active { color: var(--accent); border-bottom-color: var(--accent); background: rgba(0,212,255,0.04); }
+
+  .page { display: none; }
+  .page.active { display: block; }
+
+  /* MODAL */
+  .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.88); z-index: 500; display: flex; align-items: flex-end; justify-content: center; opacity: 0; pointer-events: none; transition: opacity 0.22s; }
+  .modal-overlay.open { opacity: 1; pointer-events: all; }
+  .modal { background: var(--surface); border: 1px solid var(--border2); border-radius: 20px 20px 0 0; padding: 18px 16px 30px; width: 100%; max-width: 480px; transform: translateY(60px); transition: transform 0.28s cubic-bezier(0.34,1.2,0.64,1); max-height: 88vh; overflow-y: auto; }
+  .modal-overlay.open .modal { transform: translateY(0); }
+  .modal-handle { width: 38px; height: 4px; background: var(--border2); border-radius: 2px; margin: 0 auto 16px; }
+  .modal-title { font-size: 15px; font-weight: 700; margin-bottom: 14px; }
+  .modal-label { font-size: 10px; font-weight: 700; color: var(--text3); letter-spacing: 2px; text-transform: uppercase; margin-bottom: 8px; }
+
+  .equip-grid { display: grid; grid-template-columns: repeat(2,1fr); gap: 7px; margin-bottom: 16px; }
+  .equip-btn { background: var(--surface2); border: 1px solid var(--border); border-radius: 10px; padding: 10px; cursor: pointer; transition: all 0.15s; position: relative; }
+  .equip-btn:active { transform: scale(0.96); }
+  .equip-btn.selected { background: rgba(0,212,255,0.1); border-color: var(--accent); }
+  .equip-btn.in-use { border-color: rgba(0,212,255,0.3); background: rgba(0,212,255,0.05); }
+  .equip-btn.in-use::after { content: '진행중'; position: absolute; top: 4px; right: 7px; font-size: 9px; color: var(--accent); font-weight: 700; }
+  .equip-name { font-size: 12px; font-weight: 700; color: var(--text); line-height: 1.3; }
+  .equip-btn.selected .equip-name { color: var(--accent); }
+  .equip-btn.in-use .equip-name { color: var(--text2); }
+
+  /* MODAL STEP INDICATOR */
+  .modal-steps { display: flex; align-items: center; gap: 6px; margin-bottom: 18px; }
+  .modal-step-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--border2); transition: all 0.2s; }
+  .modal-step-dot.active { background: var(--accent); width: 20px; border-radius: 4px; }
+  .modal-step-dot.done { background: var(--success); }
+
+  /* CODE INPUT */
+  .code-input-wrap { margin-bottom: 16px; }
+  .code-input-box { display: flex; gap: 8px; justify-content: center; margin-top: 10px; }
+  .code-digit {
+    width: 56px; height: 64px; background: var(--surface2); border: 2px solid var(--border2);
+    border-radius: 12px; text-align: center; font-family: 'JetBrains Mono', monospace;
+    font-size: 28px; font-weight: 700; color: var(--text); outline: none;
+    caret-color: var(--accent); transition: border-color 0.15s;
+  }
+  .code-digit:focus { border-color: var(--accent); background: rgba(0,212,255,0.06); }
+  .code-hint { font-size: 11px; color: var(--text3); text-align: center; margin-top: 8px; }
+
+  /* CONFIRM SUMMARY */
+  .confirm-box { background: var(--surface2); border: 1px solid var(--border2); border-radius: 12px; padding: 14px; margin-bottom: 16px; }
+  .confirm-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+  .confirm-row:last-child { margin-bottom: 0; }
+  .confirm-label { font-size: 10px; color: var(--text3); letter-spacing: 1px; text-transform: uppercase; }
+  .confirm-value { font-size: 13px; font-weight: 700; color: var(--text); }
+  .confirm-code { font-family: 'JetBrains Mono', monospace; font-size: 18px; font-weight: 700; color: var(--accent); letter-spacing: 4px; }
+
+  /* OTHER NAME INPUT */
+  .other-name-inp { width: 100%; background: var(--surface2); border: 1px solid var(--border2); border-radius: 10px; padding: 11px 14px; font-family: 'Noto Sans KR', sans-serif; font-size: 14px; color: var(--text); outline: none; margin-bottom: 12px; }
+  .other-name-inp:focus { border-color: var(--accent); }
+  .other-name-inp::placeholder { color: var(--text3); }
+
+  .modal-btn-row { display: flex; gap: 8px; margin-top: 4px; }
+  .btn { border: none; border-radius: 12px; font-family: 'Noto Sans KR', sans-serif; font-size: 14px; font-weight: 700; cursor: pointer; padding: 13px; transition: all 0.18s; }
+  .btn:active { transform: scale(0.95); }
+  .btn-primary { background: linear-gradient(135deg,#00d4ff,#0095cc); color: #000; flex: 1; }
+  .btn-cancel { background: var(--surface2); border: 1px solid var(--border); color: var(--text2); flex: 0; padding: 13px 18px; }
+
+  /* WORK PAGE */
+  .page-work { padding: 10px 12px; }
+  .date-bar { padding: 7px 0 10px; font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--text3); text-align: center; }
+  .add-btn { width: 100%; padding: 13px; background: var(--surface); border: 1px dashed var(--border2); border-radius: 13px; color: var(--accent); font-family: 'Noto Sans KR', sans-serif; font-size: 14px; font-weight: 700; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; margin-bottom: 12px; transition: all 0.18s; }
+  .add-btn:active { background: rgba(0,212,255,0.07); }
+  .sessions-wrap { display: flex; flex-direction: column; gap: 10px; }
+
+  /* SESSION CARD */
+  .sess-card { background: var(--surface); border: 1px solid var(--border); border-radius: 15px; overflow: hidden; transition: border-color 0.25s; }
+  .sess-card.running { border-color: rgba(0,212,255,0.45); }
+  .sess-card.paused  { border-color: rgba(255,179,0,0.45); }
+  .sess-card.idle    { border-color: var(--border); }
+  .sess-card.done    { border-color: rgba(0,230,118,0.35); opacity: 0.65; }
+
+  .sess-topbar { height: 3px; background: var(--border); }
+  .sess-card.running .sess-topbar { background: linear-gradient(90deg,var(--accent),var(--accent2)); }
+  .sess-card.paused  .sess-topbar { background: var(--pause); }
+  .sess-card.done    .sess-topbar { background: var(--success); }
+
+  .sess-header { display: flex; align-items: center; gap: 10px; padding: 11px 13px 9px; cursor: pointer; user-select: none; }
+  .sess-equip-tag { background: var(--surface3); border: 1px solid var(--border2); border-radius: 7px; padding: 5px 9px; font-size: 10px; font-weight: 700; color: var(--text2); flex-shrink: 0; max-width: 100px; word-break: break-all; line-height: 1.3; }
+  .sess-card.running .sess-equip-tag { color: var(--accent); border-color: rgba(0,212,255,0.3); }
+  .sess-card.paused  .sess-equip-tag { color: var(--pause);  border-color: rgba(255,179,0,0.3); }
+  .sess-card.done    .sess-equip-tag { color: var(--success); border-color: rgba(0,230,118,0.3); }
+
+  .sess-center { flex: 1; min-width: 0; }
+  .sess-step-line { font-size: 10px; color: var(--text2); margin-bottom: 2px; }
+  .sess-step-line b { color: var(--text); }
+  .sess-big-timer { font-family: 'JetBrains Mono', monospace; font-size: 28px; font-weight: 700; color: var(--text); line-height: 1; }
+  .sess-card.paused .sess-big-timer { color: var(--pause); }
+  .sess-card.idle   .sess-big-timer { color: var(--text3); }
+  .sess-card.done   .sess-big-timer { color: var(--success); }
+
+  .sess-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--text3); flex-shrink: 0; }
+  .sess-card.running .sess-dot { background: var(--accent); animation: blink 1.5s infinite; }
+  .sess-card.paused  .sess-dot { background: var(--pause); }
+  .sess-card.done    .sess-dot { background: var(--success); }
+  @keyframes blink { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.35;transform:scale(1.45)} }
+
+  .sess-body { padding: 0 13px 13px; }
+
+  /* ── STEP SELECTOR GRID (10 buttons) ── */
+  .step-sel-label { font-size: 10px; font-weight: 700; color: var(--text3); letter-spacing: 2px; text-transform: uppercase; margin-bottom: 8px; }
+  .step-sel-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 6px; margin-bottom: 12px; }
+  .step-sel-btn {
+    background: var(--surface2); border: 1px solid var(--border); border-radius: 9px;
+    padding: 8px 3px; text-align: center; cursor: pointer; transition: all 0.15s; position: relative;
+  }
+  .step-sel-btn:active { transform: scale(0.93); }
+  /* states */
+  .step-sel-btn.sel-idle    { } /* not started */
+  .step-sel-btn.sel-done    { background: rgba(0,230,118,0.1); border-color: rgba(0,230,118,0.4); }
+  .step-sel-btn.sel-active  { background: rgba(0,212,255,0.13); border-color: var(--accent); box-shadow: 0 0 0 2px rgba(0,212,255,0.18); }
+  .step-sel-btn.sel-paused  { background: rgba(255,179,0,0.1);  border-color: rgba(255,179,0,0.4); }
+
+  .ssb-num { font-family: 'JetBrains Mono', monospace; font-size: 15px; font-weight: 700; line-height: 1; margin-bottom: 2px; color: var(--text3); }
+  .step-sel-btn.sel-done   .ssb-num { color: var(--success); }
+  .step-sel-btn.sel-active .ssb-num { color: var(--accent); }
+  .step-sel-btn.sel-paused .ssb-num { color: var(--pause); }
+  .step-sel-btn.sel-idle   .ssb-num { color: var(--text3); }
+
+  .ssb-lbl { font-size: 7.5px; color: var(--text3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 0 2px; }
+  .step-sel-btn.sel-active .ssb-lbl { color: var(--accent); }
+  .step-sel-btn.sel-done   .ssb-lbl { color: var(--success); }
+
+  .ssb-check { position: absolute; top: 3px; right: 4px; font-size: 8px; color: var(--success); }
+  .ssb-time  { font-family: 'JetBrains Mono', monospace; font-size: 7px; color: var(--text3); margin-top: 1px; }
+  .step-sel-btn.sel-done  .ssb-time { color: var(--success); }
+  .step-sel-btn.sel-active .ssb-time { color: var(--accent); }
+
+  /* ACTIVE STEP CONTROL */
+  .active-step-box {
+    background: var(--surface2); border: 1px solid var(--border2); border-radius: 11px;
+    padding: 11px 13px; margin-bottom: 10px;
+  }
+  .asb-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+  .asb-name { font-size: 13px; font-weight: 700; color: var(--text); }
+  .asb-status { font-size: 10px; font-weight: 700; letter-spacing: 1px; }
+  .asb-status.running { color: var(--accent); }
+  .asb-status.paused  { color: var(--pause); }
+
+  .asb-timer { font-family: 'JetBrains Mono', monospace; font-size: 36px; font-weight: 700; color: var(--text); line-height: 1; margin-bottom: 4px; }
+  .asb-timer.paused { color: var(--pause); }
+
+  .asb-sub { font-size: 10px; color: var(--text3); margin-bottom: 10px; font-family: 'JetBrains Mono', monospace; }
+
+  .chip-row { display: grid; grid-template-columns: repeat(3,1fr); gap: 6px; margin-bottom: 10px; }
+  .s-chip { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 7px 6px; text-align: center; }
+  .s-chip-lbl { font-size: 9px; color: var(--text3); letter-spacing: 1px; text-transform: uppercase; margin-bottom: 2px; }
+  .s-chip-val { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--text2); font-weight: 700; }
+
+  /* STEP DONE TABLE */
+  .done-table { background: var(--surface2); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; margin-bottom: 10px; }
+  .dt-row { display: grid; grid-template-columns: 26px 1fr 54px 54px 62px; align-items: center; padding: 5px 10px; border-bottom: 1px solid var(--border); font-size: 10px; }
+  .dt-row:last-child { border-bottom: none; }
+  .dt-row.hdr { font-size: 9px; color: var(--text3); letter-spacing: 1px; text-transform: uppercase; background: rgba(0,0,0,0.2); }
+  .dt-num { font-family: 'JetBrains Mono', monospace; font-weight: 700; color: var(--accent); }
+  .dt-name { color: var(--text2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding-right: 4px; }
+  .dt-t { font-family: 'JetBrains Mono', monospace; color: var(--text3); text-align: center; font-size: 9px; }
+  .dt-d { font-family: 'JetBrains Mono', monospace; color: var(--success); text-align: right; font-weight: 700; }
+
+  /* CARD BUTTONS */
+  .sess-btn-row { display: flex; gap: 7px; margin-bottom: 8px; }
+  .s-btn { flex: 1; padding: 11px 6px; border-radius: 10px; border: none; font-family: 'Noto Sans KR', sans-serif; font-size: 12px; font-weight: 700; cursor: pointer; transition: all 0.15s; }
+  .s-btn:active { transform: scale(0.94); }
+  .s-btn-pause  { background: linear-gradient(135deg,#ffb300,#e65c00); color:#000; }
+  .s-btn-resume { background: linear-gradient(135deg,#00e676,#00a152); color:#000; }
+  .s-btn-stop   { background: linear-gradient(135deg,#ff6b35,#c62828); color:#fff; }
+  .s-btn-finish { background: linear-gradient(135deg,#00e676,#00a152); color:#000; }
+  .s-btn-del    { background: var(--surface2); border: 1px solid var(--border); color: var(--danger); flex: 0; padding: 11px 12px; }
+  .s-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+
+  .note-inp { width: 100%; background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 8px 11px; font-family: 'Noto Sans KR', sans-serif; font-size: 12px; color: var(--text); resize: none; outline: none; height: 48px; }
+  .note-inp:focus { border-color: var(--accent); }
+  .note-inp::placeholder { color: var(--text3); }
+
+  .idle-hint { text-align: center; padding: 14px 0 6px; color: var(--text3); font-size: 12px; }
+
+  /* RECORDS */
+  .page-records { padding: 12px; }
+  .summary-bar { display: grid; grid-template-columns: repeat(3,1fr); gap: 8px; margin-bottom: 14px; }
+  .sum-card { background: var(--surface); border: 1px solid var(--border); border-radius: 11px; padding: 12px; text-align: center; }
+  .sum-val { font-family: 'JetBrains Mono', monospace; font-size: 20px; font-weight: 700; color: var(--accent); }
+  .sum-lbl { font-size: 10px; color: var(--text3); margin-top: 2px; }
+
+  .filter-row { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 6px; margin-bottom: 10px; scrollbar-width: none; }
+  .filter-row::-webkit-scrollbar { display: none; }
+  .filter-chip { flex-shrink: 0; padding: 5px 12px; border-radius: 20px; font-size: 11px; font-weight: 700; cursor: pointer; border: 1px solid var(--border); background: var(--surface2); color: var(--text2); white-space: nowrap; }
+  .filter-chip.active { background: rgba(0,212,255,0.12); border-color: var(--accent); color: var(--accent); }
+
+  .rec-group { background: var(--surface); border: 1px solid var(--border); border-radius: 13px; overflow: hidden; margin-bottom: 10px; }
+  .rec-group-header { display: flex; align-items: center; justify-content: space-between; padding: 10px 13px; background: var(--surface2); border-bottom: 1px solid var(--border); }
+  .rec-group-equip { font-size: 13px; font-weight: 700; color: var(--accent); }
+  .rec-group-date { font-size: 10px; color: var(--text3); margin-top: 1px; }
+  .rec-group-total { font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 700; color: var(--success); }
+
+  .rec-step-row { display: grid; grid-template-columns: 26px 1fr 54px 54px 62px; align-items: center; padding: 6px 13px; border-bottom: 1px solid var(--border); font-size: 10px; }
+  .rec-step-row:last-child { border-bottom: none; }
+  .rec-step-row.hdr { font-size: 9px; color: var(--text3); letter-spacing: 1px; text-transform: uppercase; background: rgba(0,0,0,0.15); }
+  .rst-num { font-family: 'JetBrains Mono', monospace; color: var(--accent); font-weight: 700; }
+  .rst-name { color: var(--text2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding-right: 4px; }
+  .rst-t { font-family: 'JetBrains Mono', monospace; color: var(--text3); font-size: 9px; text-align: center; }
+  .rst-d { font-family: 'JetBrains Mono', monospace; color: var(--success); text-align: right; font-weight: 700; }
+  .rst-note { grid-column: 1/-1; font-size: 10px; color: var(--text2); font-style: italic; padding: 0 0 4px 26px; }
+
+  .empty-state { text-align: center; padding: 50px 20px; color: var(--text3); }
+  .empty-icon { font-size: 36px; margin-bottom: 10px; }
+
+  .export-btn { width: 100%; padding: 14px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; color: var(--accent); font-family: 'Noto Sans KR', sans-serif; font-size: 13px; font-weight: 700; cursor: pointer; margin-top: 10px; display: flex; align-items: center; justify-content: center; gap: 8px; }
+  .export-btn:active { background: rgba(0,212,255,0.1); }
+
+  /* SETTINGS */
+  .page-settings { padding: 12px; }
+  .sec-title { font-size: 10px; font-weight: 700; color: var(--text3); letter-spacing: 2px; text-transform: uppercase; margin-bottom: 9px; }
+  .step-name-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 18px; }
+  .step-name-row { display: flex; align-items: center; gap: 8px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 9px 12px; }
+  .step-num-tag { font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 700; color: var(--accent); width: 26px; flex-shrink: 0; }
+  .step-name-inp { flex: 1; background: transparent; border: none; outline: none; font-family: 'Noto Sans KR', sans-serif; font-size: 12px; color: var(--text); }
+  .step-name-inp::placeholder { color: var(--text3); }
+  .danger-btn { width: 100%; padding: 13px; background: rgba(255,68,68,0.06); border: 1px solid rgba(255,68,68,0.2); border-radius: 11px; color: var(--danger); font-family: 'Noto Sans KR', sans-serif; font-size: 13px; font-weight: 700; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; }
+
+  .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%) translateY(80px); background: var(--surface2); border: 1px solid var(--border2); border-radius: 12px; padding: 10px 18px; font-size: 13px; font-weight: 700; color: var(--success); z-index: 999; transition: transform 0.28s cubic-bezier(0.34,1.56,0.64,1); white-space: nowrap; pointer-events: none; }
+  .toast.show { transform: translateX(-50%) translateY(0); }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-top">
+    <div class="logo">SEMI · TRACKER</div>
+    <div class="clock" id="hClock">--:--:--</div>
+  </div>
+  <div class="header-title">설비 검사 시간 추적기</div>
+</div>
+
+<div class="tabs">
+  <button class="tab active" onclick="switchTab('work')">⚡ 작업</button>
+  <button class="tab" onclick="switchTab('records')">📋 기록</button>
+  <button class="tab" onclick="switchTab('settings')">⚙️ 설정</button>
+</div>
+
+<div class="page active" id="tab-work">
+  <div class="page-work">
+    <div class="date-bar" id="dateBar"></div>
+    <button class="add-btn" onclick="openModal()">＋ 설비 검사 추가</button>
+    <div class="sessions-wrap" id="sessionsWrap">
+      <div class="empty-state" id="emptyWork">
+        <div class="empty-icon">🏭</div>
+        <div style="font-size:13px">설비를 추가해 검사를 시작하세요</div>
+        <div style="font-size:11px;margin-top:6px;color:var(--text3)">항목을 자유롭게 선택해 기록할 수 있어요</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="page" id="tab-records">
+  <div class="page-records">
+    <div class="summary-bar">
+      <div class="sum-card"><div class="sum-val" id="sumSessions">0</div><div class="sum-lbl">설비 기록</div></div>
+      <div class="sum-card"><div class="sum-val" id="sumTotalH">0h</div><div class="sum-lbl">총 작업</div></div>
+      <div class="sum-card"><div class="sum-val" id="sumToday">0</div><div class="sum-lbl">오늘</div></div>
+    </div>
+    <div class="filter-row" id="filterRow"></div>
+    <div id="recordList"></div>
+    <button class="export-btn" onclick="exportCSV()">📥 엑셀(CSV)로 내보내기</button>
+  </div>
+</div>
+
+<div class="page" id="tab-settings">
+  <div class="page-settings">
+    <div class="sec-title">검사 항목 이름 설정</div>
+    <div class="step-name-list" id="stepNameList"></div>
+    <button class="danger-btn" onclick="clearAll()">🗑️ 전체 기록 초기화</button>
+  </div>
+</div>
+
+<!-- EQUIP SELECT MODAL -->
+<div class="modal-overlay" id="modalOverlay" onclick="closeModalOut(event)">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-steps">
+      <div class="modal-step-dot active" id="mdot0"></div>
+      <div class="modal-step-dot" id="mdot1"></div>
+      <div class="modal-step-dot" id="mdot2"></div>
+    </div>
+    <div id="modalContent"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ── CONSTANTS ──────────────────────────────────────────────────────────
+const EQUIPMENT = [
+  'PRIME PC BOX','SC PC BOX','DSV HEATER BOX','INDEX POWER BOX',
+  'VALVE BOX','MIXING UNIT','SCS UNIT','IPA UNIT','IFM','기타'
+];
+const DEFAULT_STEPS = ['지그 검사','인터페이스','서류'];
+
+// ── STATE ──────────────────────────────────────────────────────────────
+let stepNames = JSON.parse(localStorage.getItem('sn4')||'null') || DEFAULT_STEPS.slice();
+let records   = JSON.parse(localStorage.getItem('rec4')||'[]');
+
+/*
+  Session:
+  {
+    id, equipName, state: 'idle'|'running'|'paused'|'done',
+    activeStepIdx: null | 0-9,   ← 현재 진행 중인 단계
+    steps: [ { state:'idle'|'running'|'paused'|'done', startTime, endTime, pauseMs, activeMs, note } x10 ]
+    stepPauseStart: null | ts,
+    expanded: bool
+  }
+*/
+let sessions = [];
+let uid = 1;
+
+// ── SESSION 저장/복원 ──────────────────────────────────────────────────
+function saveSessions() {
+  const now = Date.now();
+  const toSave = sessions.map(s => {
+    const copy = JSON.parse(JSON.stringify(s));
+    copy._savedAt = now;
+    // 각 단계별 pauseStart 정리
+    copy.steps.forEach(st => {
+      if(st.pauseStart) {
+        st.pauseMs += now - st.pauseStart;
+        st.pauseStart = null;
+      }
+    });
+    return copy;
+  });
+  localStorage.setItem('sessions4', JSON.stringify(toSave));
+  localStorage.setItem('uid4', String(uid));
+}
+
+function loadSessions() {
+  const raw = localStorage.getItem('sessions4');
+  if(!raw) return;
+  try {
+    const loaded = JSON.parse(raw);
+    uid = parseInt(localStorage.getItem('uid4')||'1');
+    const now = Date.now();
+    sessions = loaded.filter(s => s.state !== 'done').map(s => {
+      const savedAt = s._savedAt || now;
+      const closedMs = now - savedAt;
+      s.steps.forEach(st => {
+        if(st.state === 'running') {
+          // 앱 꺼진 시간 → pauseMs에 추가
+          st.pauseMs += closedMs;
+          st.pauseStart = null;
+        } else if(st.state === 'paused') {
+          // 정지 상태: pauseStart를 now로 재설정
+          st.pauseStart = now;
+        }
+      });
+      s.state = sessState(s);
+      s._savedAt = null;
+      return s;
+    });
+    renderSessions();
+    if(sessions.length > 0) showToast(`🔄 진행 중인 작업 ${sessions.length}개 복원됨`);
+  } catch(e) { sessions = []; }
+}
+
+// ── INIT ───────────────────────────────────────────────────────────────
+function init() {
+  document.getElementById('dateBar').textContent =
+    new Date().toLocaleDateString('ko-KR',{year:'numeric',month:'long',day:'numeric',weekday:'short'});
+  renderStepNames();
+  loadSessions();
+  setInterval(() => {
+    document.getElementById('hClock').textContent = new Date().toTimeString().slice(0,8);
+    tickAll();
+    saveSessions(); // 매 초마다 자동 저장
+  }, 1000);
+  // 페이지 종료/숨김 시에도 저장
+  document.addEventListener('visibilitychange', () => { if(document.hidden) saveSessions(); });
+  window.addEventListener('pagehide', saveSessions);
+}
+
+// ── TABS ───────────────────────────────────────────────────────────────
+function switchTab(t) {
+  document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
+  document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));
+  document.getElementById('tab-'+t).classList.add('active');
+  ['work','records','settings'].forEach((n,i)=>{if(n===t)document.querySelectorAll('.tab')[i].classList.add('active');});
+  if(t==='records') renderRecords();
+  if(t==='settings') renderStepNames();
+}
+
+// ── MODAL (3-step flow) ───────────────────────────────────────────────
+// modalStep: 0=설비선택, 1=코드입력, 2=확인
+let modalStep = 0;
+let modalEquip = null;   // selected equip name (base)
+let modalCode  = '';     // 4-digit code
+let modalOtherName = ''; // custom name when 기타
+
+function openModal() {
+  modalStep=0; modalEquip=null; modalCode=''; modalOtherName='';
+  renderModal();
+  document.getElementById('modalOverlay').classList.add('open');
+}
+function closeModal() { document.getElementById('modalOverlay').classList.remove('open'); }
+function closeModalOut(e) { if(e.target===document.getElementById('modalOverlay')) closeModal(); }
+
+function setModalDots(step) {
+  [0,1,2].forEach(i=>{
+    const d=document.getElementById(`mdot${i}`);
+    d.className='modal-step-dot'+(i<step?' done':i===step?' active':'');
+  });
+}
+
+function renderModal() {
+  setModalDots(modalStep);
+  const mc = document.getElementById('modalContent');
+  if(modalStep===0) {
+    // ── Step 0: 설비 선택 ──
+    const inUse = sessions.filter(s=>s.state!=='done');
+    const grid = EQUIPMENT.map(eq=>{
+      const busy = inUse.filter(s=>s.baseEquip===eq);
+      const sel  = modalEquip===eq;
+      const busyBadge = busy.length>0 ? `<div style="font-size:9px;color:var(--accent);margin-top:2px">진행중 ${busy.length}대</div>` : '';
+      return `<div class="equip-btn${sel?' selected':''}" onclick="modalSelEquip('${esc(eq)}')">
+        <div class="equip-name">${eq}</div>${busyBadge}</div>`;
+    }).join('');
+    mc.innerHTML=`
+      <div class="modal-title">설비 선택</div>
+      <div class="modal-label">작업할 설비 (중복 선택 가능)</div>
+      <div class="equip-grid">${grid}</div>
+      ${modalEquip==='기타'?`
+        <div class="modal-label">설비 이름 직접 입력</div>
+        <input class="other-name-inp" id="otherNameInp" placeholder="예: CUSTOM UNIT A" maxlength="30"
+          value="${modalOtherName}" oninput="modalOtherName=this.value.toUpperCase()">
+      `:''}
+      <div class="modal-btn-row">
+        <button class="btn btn-cancel" onclick="closeModal()">취소</button>
+        <button class="btn btn-primary" onclick="modalNext0()">다음 →</button>
+      </div>`;
+  } else if(modalStep===1) {
+    // ── Step 1: 코드 입력 ──
+    const displayName = modalEquip==='기타' ? (modalOtherName||'기타') : modalEquip;
+    mc.innerHTML=`
+      <div class="modal-title">식별 코드 입력</div>
+      <div style="font-size:12px;color:var(--text2);margin-bottom:14px">
+        <b style="color:var(--accent)">${displayName}</b> — 같은 설비 여러 대를 구분하는 코드를 입력하세요
+      </div>
+      <div class="modal-label">4자리 코드 (숫자/영문)</div>
+      <div class="code-input-wrap">
+        <div class="code-input-box">
+          <input class="code-digit" id="cd0" maxlength="1" oninput="codeInput(0)" onkeydown="codeKey(event,0)">
+          <input class="code-digit" id="cd1" maxlength="1" oninput="codeInput(1)" onkeydown="codeKey(event,1)">
+          <input class="code-digit" id="cd2" maxlength="1" oninput="codeInput(2)" onkeydown="codeKey(event,2)">
+          <input class="code-digit" id="cd3" maxlength="1" oninput="codeInput(3)" onkeydown="codeKey(event,3)">
+        </div>
+        <div class="code-hint">예: 0001, A1B2, 001A — 동일 설비를 구분합니다</div>
+      </div>
+      <div class="modal-btn-row">
+        <button class="btn btn-cancel" onclick="modalBack()">← 이전</button>
+        <button class="btn btn-primary" onclick="modalNext1()">다음 →</button>
+      </div>`;
+    setTimeout(()=>{ const d=document.getElementById('cd0'); if(d) d.focus(); },100);
+  } else if(modalStep===2) {
+    // ── Step 2: 확인 ──
+    const displayName = modalEquip==='기타' ? (modalOtherName||'기타') : modalEquip;
+    const fullName = `${displayName} [${modalCode.toUpperCase()}]`;
+    mc.innerHTML=`
+      <div class="modal-title">작업 확인</div>
+      <div class="confirm-box">
+        <div class="confirm-row">
+          <div class="confirm-label">설비</div>
+          <div class="confirm-value">${displayName}</div>
+        </div>
+        <div class="confirm-row">
+          <div class="confirm-label">식별 코드</div>
+          <div class="confirm-code">${modalCode.toUpperCase()}</div>
+        </div>
+        <div class="confirm-row">
+          <div class="confirm-label">표시 이름</div>
+          <div class="confirm-value" style="color:var(--accent)">${fullName}</div>
+        </div>
+      </div>
+      <div class="modal-btn-row">
+        <button class="btn btn-cancel" onclick="modalBack()">← 이전</button>
+        <button class="btn btn-primary" onclick="confirmSession()">▶ 시작</button>
+      </div>`;
+  }
+}
+
+function modalSelEquip(name) {
+  modalEquip=name;
+  if(name!=='기타') modalOtherName='';
+  renderModal();
+}
+
+function modalNext0() {
+  if(!modalEquip){ showToast('설비를 선택하세요!'); return; }
+  if(modalEquip==='기타' && !modalOtherName.trim()){ showToast('설비 이름을 입력하세요!'); return; }
+  modalStep=1; renderModal();
+}
+
+function codeInput(idx) {
+  const el=document.getElementById(`cd${idx}`);
+  el.value=el.value.toUpperCase().replace(/[^A-Z0-9]/g,'').slice(-1);
+  if(el.value && idx<3) document.getElementById(`cd${idx+1}`).focus();
+}
+function codeKey(e,idx) {
+  if(e.key==='Backspace'&&!document.getElementById(`cd${idx}`).value&&idx>0)
+    document.getElementById(`cd${idx-1}`).focus();
+}
+
+function modalNext1() {
+  const code=[0,1,2,3].map(i=>(document.getElementById(`cd${i}`)?.value||'')).join('').toUpperCase();
+  if(code.length!==4){ showToast('4자리를 모두 입력하세요!'); return; }
+  modalCode=code; modalStep=2; renderModal();
+}
+
+function modalBack() {
+  modalStep=Math.max(0,modalStep-1); renderModal();
+}
+
+function confirmSession() {
+  const displayName = modalEquip==='기타' ? (modalOtherName.trim()||'기타') : modalEquip;
+  const fullName = `${displayName} [${modalCode.toUpperCase()}]`;
+  const sess = {
+    id: uid++,
+    equipName: fullName,
+    baseEquip: modalEquip==='기타' ? displayName : modalEquip,
+    equipCode: modalCode.toUpperCase(),
+    state: 'idle',
+    // activeStepIdx 제거 — 각 step이 자체 pauseStart 보유
+    steps: Array.from({length:3}, ()=>({
+      state:'idle',        // idle | running | paused | done
+      startTime:null, endTime:null,
+      pauseMs:0, pauseStart:null,  // 각 단계 독립 pauseStart
+      activeMs:0, note:''
+    })),
+    expanded: true
+  };
+  sessions.push(sess);
+  closeModal();
+  renderSessions();
+  saveSessions();
+  showToast(`🏭 ${fullName} 추가됨`);
+}
+
+// ── STEP ACTIONS (다중 단계 동시 진행) ────────────────────────────────
+function sessState(s) {
+  if(s.steps.some(st=>st.state==='running')) return 'running';
+  if(s.steps.some(st=>st.state==='paused'))  return 'paused';
+  if(s.steps.some(st=>st.state==='done'))    return 'idle';
+  return 'idle';
+}
+
+function startStep(sessId, stepIdx) {
+  const s = sessions.find(x=>x.id===sessId); if(!s) return;
+  const st = s.steps[stepIdx];
+  if(st.state === 'done') {
+    if(!confirm(`CHECK ${stepIdx+1}은 이미 완료됐어요.\n다시 기록할까요? (기존 기록 덮어씀)`)) return;
+    st.state='idle'; st.startTime=null; st.endTime=null; st.pauseMs=0; st.pauseStart=null; st.activeMs=0; st.note='';
+  }
+  if(st.state === 'running') return; // 이미 실행 중
+  const now = Date.now();
+  st.state = 'running';
+  st.startTime = now;
+  st.pauseMs = 0;
+  st.pauseStart = null;
+  s.state = sessState(s);
+  renderSessCard(s);
+  saveSessions();
+  showToast(`▶ CHECK ${stepIdx+1} 시작`);
+}
+
+function pauseStep(sessId, stepIdx) {
+  const s = sessions.find(x=>x.id===sessId); if(!s) return;
+  const st = s.steps[stepIdx];
+  if(st.state !== 'running') return;
+  st.pauseStart = Date.now();
+  st.state = 'paused';
+  s.state = sessState(s);
+  renderSessCard(s);
+  saveSessions();
+  showToast(`⏸ CHECK ${stepIdx+1} 정지`);
+}
+
+function resumeStep(sessId, stepIdx) {
+  const s = sessions.find(x=>x.id===sessId); if(!s) return;
+  const st = s.steps[stepIdx];
+  if(st.state !== 'paused') return;
+  if(st.pauseStart) { st.pauseMs += Date.now()-st.pauseStart; st.pauseStart=null; }
+  st.state = 'running';
+  s.state = sessState(s);
+  renderSessCard(s);
+  saveSessions();
+  showToast(`▶ CHECK ${stepIdx+1} 재개`);
+}
+
+function stopStep(sessId, stepIdx) {
+  const s = sessions.find(x=>x.id===sessId); if(!s) return;
+  const st = s.steps[stepIdx];
+  if(st.state !== 'running' && st.state !== 'paused') return;
+  const now = Date.now();
+  if(st.pauseStart) { st.pauseMs += now-st.pauseStart; st.pauseStart=null; }
+  st.endTime = now;
+  st.activeMs = Math.max(0, now - st.startTime - st.pauseMs);
+  st.state = 'done';
+  const noteEl = document.getElementById(`step-note-${s.id}-${stepIdx}`);
+  if(noteEl) st.note = noteEl.value.trim();
+  s.state = sessState(s);
+  renderSessCard(s);
+  saveSessions();
+  showToast(`✅ CHECK ${stepIdx+1} 완료`);
+}
+
+// 하위 호환 — finalizeSess에서 호출
+function finishCurrentStep(s) {
+  s.steps.forEach((st,i) => {
+    if(st.state==='running'||st.state==='paused') stopStep(s.id, i);
+  });
+}
+
+function finalizeSess(sessId) {
+  const s = sessions.find(x=>x.id===sessId); if(!s) return;
+  // 진행 중인 모든 단계 종료
+  finishCurrentStep(s);
+  const doneSteps = s.steps.filter(st=>st.state==='done');
+  if(doneSteps.length===0){ showToast('완료된 단계가 없어요'); return; }
+  const totalActive = doneSteps.reduce((a,st)=>a+st.activeMs,0);
+  const rec = {
+    id: Date.now()+Math.random(),
+    equipName: s.equipName,
+    baseEquip: s.baseEquip || s.equipName,
+    equipCode: s.equipCode || '',
+    date: fmtDate(Math.min(...doneSteps.map(st=>st.startTime))),
+    startTime: Math.min(...doneSteps.map(st=>st.startTime)),
+    endTime: Math.max(...doneSteps.map(st=>st.endTime)),
+    totalActiveMs: totalActive,
+    steps: doneSteps.map((_,i)=>s.steps[i]).map((st,i)=> st.state==='done' ? {
+      stepIdx:i, stepName:stepNames[i],
+      startTime:st.startTime, endTime:st.endTime,
+      activeMs:st.activeMs, pauseMs:st.pauseMs, note:st.note
+    } : null).filter(Boolean)
+  };
+  records.push(rec);
+  localStorage.setItem('rec4', JSON.stringify(records));
+  s.state = 'done';
+  renderSessCard(s);
+  saveSessions();
+  showToast(`✅ ${s.equipName} 저장 완료! 총 ${fmtMs(totalActive)}`);
+  setTimeout(()=>{ sessions=sessions.filter(x=>x.id!==sessId); renderSessions(); saveSessions(); }, 2600);
+}
+
+function removeSess(id) { sessions=sessions.filter(x=>x.id!==id); renderSessions(); saveSessions(); }
+function toggleExpand(id) {
+  const s=sessions.find(x=>x.id===id); if(!s) return;
+  s.expanded=!s.expanded; renderSessCard(s);
+}
+
+// ── TIMER ─────────────────────────────────────────────────────────────
+function pad(n){ return String(n).padStart(2,'0'); }
+function fmtMs(ms){
+  if(ms<0)ms=0;
+  const s=Math.floor(ms/1000),h=Math.floor(s/3600),m=Math.floor((s%3600)/60),sc=s%60;
+  return `${pad(h)}:${pad(m)}:${pad(sc)}`;
+}
+function fmtMsShort(ms){
+  const s=Math.floor(Math.max(0,ms)/1000);
+  return `${pad(Math.floor(s/60))}:${pad(s%60)}`;
+}
+function fmtTimeShort(ts){ return ts ? new Date(ts).toTimeString().slice(0,5) : '--:--'; }
+function fmtDate(ts){
+  if(!ts) return '';
+  const d = new Date(ts);
+  const y = d.getFullYear();
+  const m = pad(d.getMonth()+1);
+  const day = pad(d.getDate());
+  return `${y}-${m}-${day}`;
+}
+function fmtTime(ts){ return ts ? new Date(ts).toTimeString().slice(0,8) : '--:--:--'; }
+
+function stepLiveMs(s, idx) {
+  const st = s.steps[idx];
+  if(!st || !st.startTime || st.state==='idle'||st.state==='done') return 0;
+  const now = Date.now();
+  const paused = st.pauseMs + (st.pauseStart ? now-st.pauseStart : 0);
+  return Math.max(0, now - st.startTime - paused);
+}
+
+function totalLiveMs(s) {
+  // 완료된 단계 + 현재 진행 중인 모든 단계 합산
+  const done = s.steps.filter(st=>st.state==='done').reduce((a,st)=>a+st.activeMs,0);
+  const live = s.steps.reduce((a,st,i)=>a+stepLiveMs(s,i),0);
+  return done + live;
+}
+
+function totalDoneMs(s) {
+  return s.steps.filter(st=>st.state==='done').reduce((a,st)=>a+st.activeMs,0);
+}
+
+function tickAll() {
+  sessions.forEach(s => {
+    if(s.state==='done') return;
+    // 헤더 타이머: 전체 누적
+    const headerEl = document.getElementById(`stimer-${s.id}`);
+    if(headerEl) headerEl.textContent = fmtMs(totalLiveMs(s));
+    // 각 단계별 타이머 (그리드 버튼 + 컨트롤 박스 둘 다)
+    s.steps.forEach((st,i) => {
+      if(st.state==='running'||st.state==='paused') {
+        const liveMs = stepLiveMs(s,i);
+        // 그리드 버튼 안 시간
+        const gridEl = document.getElementById(`step-live-${s.id}-${i}`);
+        if(gridEl) gridEl.textContent = fmtMs(liveMs);
+        // 컨트롤 박스 큰 타이머
+        const boxEl = document.getElementById(`step-live-box-${s.id}-${i}`);
+        if(boxEl) boxEl.textContent = fmtMs(liveMs);
+      }
+    });
+    // 누적 칩
+    const totalEl = document.getElementById(`chip-total-${s.id}`);
+    if(totalEl) totalEl.textContent = fmtMs(totalLiveMs(s));
+  });
+}
+
+// ── RENDER ─────────────────────────────────────────────────────────────
+function renderSessions() {
+  const wrap = document.getElementById('sessionsWrap');
+  const empty = document.getElementById('emptyWork');
+  if(sessions.length===0){ wrap.innerHTML=''; wrap.appendChild(empty); empty.style.display='block'; return; }
+  empty.style.display='none';
+  sessions.forEach(s => {
+    if(!document.getElementById(`session-${s.id}`)){
+      const div=document.createElement('div'); div.id=`session-${s.id}`; wrap.appendChild(div);
+    }
+  });
+  wrap.querySelectorAll('[id^="session-"]').forEach(el=>{
+    const id=parseInt(el.id.split('-')[1]);
+    if(!sessions.find(s=>s.id===id)) el.remove();
+  });
+  sessions.forEach(s=>renderSessCard(s));
+}
+
+function renderSessCard(s) {
+  const wrap = document.getElementById(`session-${s.id}`); if(!wrap) return;
+  const totalMs = totalLiveMs(s);
+  const doneSteps = s.steps.map((st,i)=>({...st,i})).filter(st=>st.state==='done');
+  const activeSteps = s.steps.map((st,i)=>({...st,i})).filter(st=>st.state==='running'||st.state==='paused');
+
+  // ── 단계 선택 그리드 ──
+  const stepGrid = stepNames.map((name,i)=>{
+    const st = s.steps[i];
+    let cls='sel-idle';
+    if(st.state==='done')    cls='sel-done';
+    else if(st.state==='running') cls='sel-active';
+    else if(st.state==='paused')  cls='sel-paused';
+    const check = st.state==='done' ? '<div class="ssb-check">✓</div>' : '';
+    const timeStr = st.state==='done'
+      ? fmtMsShort(st.activeMs)
+      : (st.state==='running'||st.state==='paused')
+        ? `<span id="step-live-${s.id}-${i}">${fmtMs(stepLiveMs(s,i))}</span>`
+        : '';
+    return `<div class="step-sel-btn ${cls}" onclick="stepBtnClick(${s.id},${i})">
+      ${check}
+      <div class="ssb-num">${i+1}</div>
+      <div class="ssb-lbl">${name}</div>
+      <div class="ssb-time">${timeStr}</div>
+    </div>`;
+  }).join('');
+
+  // ── 진행 중인 단계 컨트롤 박스들 ──
+  const activeBoxes = activeSteps.map(st => {
+    const isPaused = st.state==='paused';
+    return `
+    <div class="active-step-box">
+      <div class="asb-top">
+        <div class="asb-name">CHECK ${st.i+1} — ${stepNames[st.i]}</div>
+        <div class="asb-status ${isPaused?'paused':'running'}">${isPaused?'⏸ 정지 중':'● 진행 중'}</div>
+      </div>
+      <div class="asb-timer ${isPaused?'paused':''}" id="step-live-box-${s.id}-${st.i}">${fmtMs(stepLiveMs(s,st.i))}</div>
+      <div class="asb-sub">시작 ${fmtTimeShort(st.startTime)}</div>
+      <div class="sess-btn-row">
+        ${isPaused
+          ? `<button class="s-btn s-btn-resume" onclick="resumeStep(${s.id},${st.i})">▶ 재개</button>`
+          : `<button class="s-btn s-btn-pause"  onclick="pauseStep(${s.id},${st.i})">⏸ 정지</button>`}
+        <button class="s-btn s-btn-stop" onclick="stopStep(${s.id},${st.i})">■ 완료</button>
+      </div>
+      <textarea class="note-inp" id="step-note-${s.id}-${st.i}" placeholder="CHECK ${st.i+1} 메모...">${st.note||''}</textarea>
+    </div>`;
+  }).join('');
+
+  const idleHint = activeSteps.length===0 && s.state!=='done'
+    ? `<div class="idle-hint">👆 검사 항목 버튼을 탭해서 시작 · 여러 항목 동시 가능</div>` : '';
+
+  // ── 완료 단계 테이블 ──
+  let doneTable = '';
+  if(doneSteps.length>0){
+    const rows = doneSteps.map(st=>`
+      <div class="dt-row">
+        <div class="dt-num">${st.i+1}</div>
+        <div class="dt-name">${stepNames[st.i]}</div>
+        <div class="dt-t">${fmtTimeShort(st.startTime)}</div>
+        <div class="dt-t">${fmtTimeShort(st.endTime)}</div>
+        <div class="dt-d">${fmtMs(st.activeMs)}</div>
+      </div>
+      ${st.note?`<div class="dt-row" style="padding-top:0"><div style="grid-column:1/-1;font-size:9px;color:var(--text2);font-style:italic;padding:0 0 3px 26px">💬 ${st.note}</div></div>`:''}
+    `).join('');
+    doneTable = `<div class="done-table" style="margin-bottom:10px">
+      <div class="dt-row hdr"><div></div><div>단계</div><div style="text-align:center">시작</div><div style="text-align:center">종료</div><div style="text-align:right">실작업</div></div>
+      ${rows}
+    </div>`;
+  }
+
+  // ── 하단 버튼 ──
+  let bottomBtns = s.state!=='done'
+    ? `<div class="sess-btn-row">
+        <button class="s-btn s-btn-finish" onclick="finalizeSess(${s.id})">💾 저장 완료</button>
+        <button class="s-btn s-btn-del" onclick="if(confirm('삭제?'))removeSess(${s.id})">✕</button>
+       </div>`
+    : `<div class="sess-btn-row">
+        <button class="s-btn" style="flex:1;background:var(--surface2);color:var(--success);border:1px solid var(--border)" disabled>저장 완료...</button>
+       </div>`;
+
+  const runningCount = activeSteps.filter(st=>st.state==='running').length;
+  const stepLine = runningCount>0
+    ? `${runningCount}개 항목 진행 중`
+    : doneSteps.length>0 ? `${doneSteps.length}개 항목 완료` : '항목을 선택하세요';
+
+  wrap.innerHTML = `<div class="sess-card ${s.state}">
+    <div class="sess-topbar"></div>
+    <div class="sess-header" onclick="toggleExpand(${s.id})">
+      <div class="sess-equip-tag">${s.equipName}</div>
+      <div class="sess-center">
+        <div class="sess-step-line">${stepLine}</div>
+        <div class="sess-big-timer" id="stimer-${s.id}">${fmtMs(totalMs)}</div>
+      </div>
+      <div class="sess-dot"></div>
+    </div>
+    ${s.expanded ? `<div class="sess-body">
+      <div class="step-sel-label">검사 항목 선택 (탭 = 시작 · 동시 진행 가능)</div>
+      <div class="step-sel-grid">${stepGrid}</div>
+      ${idleHint}
+      ${activeBoxes}
+      ${doneTable}
+      <div class="chip-row">
+        <div class="s-chip"><div class="s-chip-lbl">완료</div><div class="s-chip-val">${doneSteps.length}/3</div></div>
+        <div class="s-chip"><div class="s-chip-lbl">진행중</div><div class="s-chip-val">${activeSteps.length}개</div></div>
+        <div class="s-chip"><div class="s-chip-lbl">누적작업</div><div class="s-chip-val" id="chip-total-${s.id}">${fmtMs(totalMs)}</div></div>
+      </div>
+      ${bottomBtns}
+    </div>` : ''}
+  </div>`;
+}
+
+function stepBtnClick(sessId, stepIdx) {
+  const s = sessions.find(x=>x.id===sessId); if(!s) return;
+  const st = s.steps[stepIdx];
+  if(st.state==='running'||st.state==='paused') return; // 이미 진행 중 → 컨트롤 박스 사용
+  startStep(sessId, stepIdx);
+}
+
+// ── RECORDS ────────────────────────────────────────────────────────────
+let filterEquip = '전체';
+function renderRecords() {
+  const today = fmtDate(Date.now());
+  document.getElementById('sumSessions').textContent = records.length;
+  const totalMs = records.reduce((a,r)=>a+r.totalActiveMs,0);
+  document.getElementById('sumTotalH').textContent = (totalMs/3600000).toFixed(1)+'h';
+  document.getElementById('sumToday').textContent = records.filter(r=>r.date===today).length;
+
+  const equips = ['전체',...new Set(records.map(r=>r.baseEquip||r.equipName))];
+  document.getElementById('filterRow').innerHTML = equips.map(e=>
+    `<div class="filter-chip${filterEquip===e?' active':''}" onclick="setFilter('${esc(e)}')">
+      ${e}</div>`
+  ).join('');
+
+  const filtered = filterEquip==='전체' ? records : records.filter(r=>(r.baseEquip||r.equipName)===filterEquip);
+  const sorted = [...filtered].reverse();
+
+  if(sorted.length===0){
+    document.getElementById('recordList').innerHTML=`<div class="empty-state"><div class="empty-icon">📭</div><div style="font-size:13px">기록 없음</div></div>`;
+    return;
+  }
+
+  document.getElementById('recordList').innerHTML = sorted.map(r=>{
+    const rows = r.steps.map(st=>`
+      <div class="rec-step-row">
+        <div class="rst-num">${st.stepIdx+1}</div>
+        <div class="rst-name">${st.stepName}</div>
+        <div class="rst-t">${fmtTimeShort(st.startTime)}</div>
+        <div class="rst-t">${fmtTimeShort(st.endTime)}</div>
+        <div class="rst-d">${fmtMs(st.activeMs)}</div>
+      </div>
+      ${st.note?`<div class="rec-step-row"><div class="rst-note">💬 ${st.note}</div></div>`:''}
+    `).join('');
+    return `<div class="rec-group">
+      <div class="rec-group-header">
+        <div>
+          <div class="rec-group-equip">${r.equipName}</div>
+          <div class="rec-group-date">${r.date} · ${fmtTimeShort(r.startTime)} ~ ${fmtTimeShort(r.endTime)}</div>
+        </div>
+        <div class="rec-group-total">${fmtMs(r.totalActiveMs)}</div>
+      </div>
+      <div class="rec-step-row hdr"><div></div><div>단계</div><div style="text-align:center">시작</div><div style="text-align:center">종료</div><div style="text-align:right">실작업</div></div>
+      ${rows}
+    </div>`;
+  }).join('');
+}
+function setFilter(name){ filterEquip=name; renderRecords(); }
+
+// ── EXPORT ─────────────────────────────────────────────────────────────
+function fmtDateTime(ts){
+  if(!ts) return '';
+  const d = new Date(ts);
+  const date = fmtDate(ts);
+  const time = d.toTimeString().slice(0,8);
+  return `${date} ${time}`;
+}
+function fmtMinutes(ms){
+  return Math.floor(ms/60000);
+}
+
+function exportCSV(){
+  if(records.length===0){ showToast('내보낼 기록이 없어요'); return; }
+  const bom='\uFEFF';
+  const hdr='날짜,설비명,식별코드,단계번호,단계이름,시작시간,종료시간,실작업시간(분),휴식시간(분),메모\n';
+  const rows=records.flatMap(r=>r.steps.map(st=>
+    `${r.date},"${r.equipName}","${r.equipCode||''}",${st.stepIdx+1},"${st.stepName}","${fmtDateTime(st.startTime)}","${fmtDateTime(st.endTime)}",${fmtMinutes(st.activeMs)},${fmtMinutes(st.pauseMs)},"${st.note||''}"`
+  )).join('\n');
+  const blob=new Blob([bom+hdr+rows],{type:'text/csv;charset=utf-8;'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+  a.download=`설비작업기록_${new Date().toISOString().slice(0,10)}.csv`; a.click();
+  showToast('📥 CSV 저장 완료!');
+}
+
+// ── SETTINGS ───────────────────────────────────────────────────────────
+function renderStepNames(){
+  document.getElementById('stepNameList').innerHTML = stepNames.map((n,i)=>`
+    <div class="step-name-row">
+      <div class="step-num-tag">C${i+1}</div>
+      <input class="step-name-inp" value="${n}" placeholder="검사항목 ${i+1}"
+        oninput="stepNames[${i}]=this.value;localStorage.setItem('sn4',JSON.stringify(stepNames))">
+    </div>`).join('');
+}
+function clearAll(){
+  if(!confirm('전체 기록을 삭제할까요?')) return;
+  records=[]; localStorage.setItem('rec4','[]'); renderRecords(); showToast('초기화 완료');
+}
+
+// ── UTILS ──────────────────────────────────────────────────────────────
+function esc(s){ return s.replace(/'/g,"\\'"); }
+function showToast(msg){
+  const t=document.getElementById('toast');
+  t.textContent=msg; t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'),2400);
+}
+
+init();
+</script>
+</body>
+</html>
